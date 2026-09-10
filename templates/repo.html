@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>{{ repo_name or 'Code Wiki' }}</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link
+      rel="stylesheet"
+      href="{{ url_for('static', filename='css/styles.css') }}"
+    />
+  </head>
+
+  <body class="bg-slate-950 text-slate-100 min-h-screen flex">
+    <!-- Sidebar -->
+    <aside class="w-72 bg-slate-900 border-r border-slate-800 flex flex-col">
+      <header class="p-4 border-b border-slate-800">
+        <h1 class="text-xl font-bold text-slate-100 break-words">
+          📚 {{ repo_name or 'Code Wiki' }}
+        </h1>
+        <p class="text-xs text-slate-400 mt-1 break-all">
+          {{ repo_path or 'Local folder' }}
+        </p>
+      </header>
+
+      <div class="p-3 border-b border-slate-800">
+        <div
+          id="errorBox"
+          class="mt-1 text-xs text-red-300 font-semibold hidden bg-red-900/40 border border-red-700 p-2 rounded"
+        ></div>
+      </div>
+
+      <nav id="fileTree" class="flex-1 overflow-y-auto text-xs p-2 space-y-1">
+        <div class="text-slate-500 text-xs">Loading structure...</div>
+      </nav>
+    </aside>
+
+    <!-- Main -->
+    <main class="flex-1 flex flex-col">
+      <header
+        class="h-12 border-b border-slate-800 flex items-center justify-between px-4 text-sm"
+      >
+        <div id="breadcrumb" class="text-slate-400">Please choose file.</div>
+        <div class="flex items-center gap-2">
+          <button
+            id="graphViewBtn"
+            class="px-3 py-1 rounded bg-slate-800 hover:bg-slate-700 border border-slate-700 text-xs"
+          >
+            🌐 Diagram Overview
+          </button>
+          <a
+            href="/"
+            class="px-3 py-1 rounded bg-slate-800 hover:bg-slate-700 border border-slate-700 text-xs"
+          >
+            ⬅ Return Home
+          </a>
+        </div>
+      </header>
+
+      <!-- Nội dung wiki/diagram -->
+      <section
+        id="content"
+        class="flex-1 overflow-y-auto px-8 py-6 prose prose-invert max-w-none"
+      >
+        <h2 class="text-2xl font-bold mb-2">Analyzing repository...</h2>
+      </section>
+
+      <!-- AI Chat box -->
+      <section class="border-t border-slate-800 px-8 py-4 bg-slate-950/80">
+        <h2 class="text-lg font-semibold text-slate-100 mb-1">
+          💬 AI Chat for this repository
+        </h2>
+        <p class="text-xs text-slate-400 mb-3">
+          Ask AI about architecture, code quality, security, testing,
+          performance, or improvements that could be made to this project.
+        </p>
+
+        <div
+          id="aiChatBox"
+          class="border border-slate-700 rounded-lg p-3 h-72 flex flex-col bg-slate-900/60"
+        >
+          <div
+            id="aiChatMessages"
+            class="flex-1 overflow-y-auto text-xs space-y-2 pr-1"
+            style="white-space: pre-wrap"
+          >
+            <!-- messages sẽ được JS thêm vào -->
+          </div>
+          <form id="aiChatForm" class="mt-3 flex gap-2">
+            <input
+              id="aiChatInput"
+              type="text"
+              class="flex-1 px-2 py-1 rounded bg-slate-800 border border-slate-700 text-xs text-slate-100 focus:outline-none focus:ring-1 focus:ring-sky-500"
+              placeholder="Ví dụ: 'Suggest the top 3 most important improvements for this project?'"
+              autocomplete="off"
+            />
+            <button
+              type="submit"
+              class="px-3 py-1 rounded bg-sky-600 hover:bg-sky-500 text-xs text-white disabled:opacity-60"
+            >
+              Send
+            </button>
+          </form>
+        </div>
+      </section>
+    </main>
+
+    <!-- Biến REPO_ID cho JS -->
+    <script>
+      window.REPO_ID = "{{ repo_id }}";
+    </script>
+
+    <!-- JS: AI Chat client -->
+    <script>
+      (function () {
+        const repoId = window.REPO_ID;
+        const form = document.getElementById("aiChatForm");
+        const input = document.getElementById("aiChatInput");
+        const messagesEl = document.getElementById("aiChatMessages");
+
+        if (!form || !input || !messagesEl || !repoId) return;
+
+        let history = [];
+
+        function appendMessage(role, text) {
+          const div = document.createElement("div");
+          if (role === "user") {
+            div.className = "text-xs text-slate-100";
+            div.textContent = "You: " + text;
+          } else {
+            div.className =
+              "text-xs text-sky-100 bg-slate-800/70 border border-sky-700/40 rounded px-2 py-1";
+            div.textContent = "AI: " + text;
+          }
+          messagesEl.appendChild(div);
+          messagesEl.scrollTop = messagesEl.scrollHeight;
+        }
+
+        form.addEventListener("submit", async (e) => {
+          e.preventDefault();
+          const q = input.value.trim();
+          if (!q) return;
+
+          appendMessage("user", q);
+          history.push({ role: "user", content: q });
+          input.value = "";
+
+          const submitBtn = form.querySelector('button[type="submit"]');
+          submitBtn.disabled = true;
+
+          try {
+            const res = await fetch(
+              `/api/repo/${encodeURIComponent(repoId)}/chat`,
+              {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ question: q, history }),
+              }
+            );
+            const data = await res.json();
+
+            if (!res.ok || data.error) {
+              appendMessage("assistant", data.error || "Chat failed");
+              return;
+            }
+
+            appendMessage("assistant", data.answer);
+            history.push({ role: "assistant", content: data.answer });
+          } catch (err) {
+            console.error(err);
+            appendMessage("assistant", "Network error while calling AI.");
+          } finally {
+            submitBtn.disabled = false;
+          }
+        });
+      })();
+    </script>
+
+    <!-- JS chính để load cấu trúc repo + nội dung -->
+    <script src="{{ url_for('static', filename='js/wiki.js') }}"></script>
+  </body>
+</html>

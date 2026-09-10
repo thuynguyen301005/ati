@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>SpecForge | Specification-to-Software Agent</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}" />
+  </head>
+  <body class="spec-page">
+    <header class="spec-nav">
+      <a class="brand" href="/">SPEC<span>FORGE</span></a>
+      <div class="nav-status"><span></span> Multi-step agent ready</div>
+    </header>
+
+    <main class="spec-shell">
+      <section class="spec-hero">
+        <div class="eyebrow">Specification-to-Software Agent</div>
+        <h1>Turn a clear idea into a buildable system.</h1>
+        <p>Describe the product in plain language. SpecForge will shape the idea into stories, architecture, tasks, code, tests, and deployment notes.</p>
+      </section>
+
+      <section class="spec-workspace">
+        <form id="specForm" class="spec-input-panel">
+          <div class="panel-heading"><div><span class="step-number">01</span><h2>Write the specification</h2></div><span id="charCount">0 / 12000</span></div>
+          <label for="requirement">Product requirement</label>
+          <textarea id="requirement" minlength="20" maxlength="12000" required placeholder="Example: Build a campus event platform where students discover events, RSVP, receive reminders, and organizers manage attendance. Include roles, authentication, search, and a simple admin dashboard."></textarea>
+          <div class="prompt-chips">
+            <button type="button" data-prompt="Build a personal finance tracker with accounts, monthly budgets, transaction categories, spending charts, and CSV export.">Personal finance tracker</button>
+            <button type="button" data-prompt="Build a campus event platform where students discover events, RSVP, receive reminders, and organizers manage attendance.">Campus events</button>
+            <button type="button" data-prompt="Build a support ticket system with customer tickets, agent assignment, priorities, status history, and email notifications.">Support desk</button>
+          </div>
+          <button id="generateBtn" class="primary-action" type="submit"><span>Generate software plan</span><strong>→</strong></button>
+          <div id="errorBox" class="spec-error" role="alert"></div>
+        </form>
+
+        <aside class="pipeline-panel">
+          <div class="panel-heading"><div><span class="step-number">02</span><h2>Agent pipeline</h2></div></div>
+          <ol id="pipelineList">
+            <li data-stage="stories"><span>01</span><div><b>User stories</b><small>Goals and acceptance criteria</small></div></li>
+            <li data-stage="architecture"><span>02</span><div><b>Architecture</b><small>Components and key decisions</small></div></li>
+            <li data-stage="tasks"><span>03</span><div><b>Implementation tasks</b><small>Ordered work with dependencies</small></div></li>
+            <li data-stage="code"><span>04</span><div><b>Source code</b><small>Coherent MVP file tree</small></div></li>
+            <li data-stage="tests"><span>05</span><div><b>Tests</b><small>Behavior-focused test suite</small></div></li>
+            <li data-stage="docs"><span>06</span><div><b>Deployment docs</b><small>README, Docker, and run notes</small></div></li>
+          </ol>
+        </aside>
+      </section>
+
+      <section id="results" class="results-panel hidden">
+        <div class="results-header"><div><div class="eyebrow">Generated project</div><h2 id="resultTitle">Software plan</h2></div><div class="result-actions"><button id="runTestsBtn" class="secondary-action" type="button">Run tests</button><button id="exportBtn" class="secondary-action" type="button">Download ZIP</button><button id="newSpecBtn" class="secondary-action" type="button">New specification</button></div></div>
+        <nav id="artifactTabs" class="artifact-tabs"></nav>
+        <article id="artifactContent" class="artifact-content"></article>
+      </section>
+    </main>
+    <script src="{{ url_for('static', filename='js/spec.js') }}"></script>
+  </body>
+</html>
