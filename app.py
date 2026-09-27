@@ -17,6 +17,7 @@ from services.analysis import (
     review_repo_with_gemini,
     GEMINI_API_URL,  # dùng lại URL đã khai báo trong services.analysis
 )
+from services.gemini_client import post_gemini
 from services.git_repo import clone_git_repo_and_load_files
 from services.spec_agent import generate_software_plan
 
@@ -487,9 +488,9 @@ def chat_about_repo_with_gemini(repo: Dict, question: str, history: List[Dict]):
             },
         }
 
-        resp = requests.post(GEMINI_API_URL, json=body, timeout=60)
-        if resp.status_code != 200:
-            return None, f"Gemini API error {resp.status_code}: {resp.text}"
+        resp, api_error = post_gemini(body, label="repo chat", timeout=60)
+        if api_error or resp is None:
+            return None, api_error
 
         data = resp.json()
         candidates = data.get("candidates")

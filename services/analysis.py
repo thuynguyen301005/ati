@@ -1,18 +1,11 @@
 import re
-import time
 import json
 from typing import Dict, Tuple, Iterable
 
-import requests
 import graphviz
 
-from config import GOOGLE_GEMINI_API_KEY
-
-# === API URL của Gemini ===
-GEMINI_API_URL = (
-    f"https://generativelanguage.googleapis.com/v1beta/models/"
-    f"gemini-2.0-flash:generateContent?key={GOOGLE_GEMINI_API_KEY}"
-)
+# GEMINI_API_URL được re-export để app.py tiếp tục import từ đây.
+from services.gemini_client import GEMINI_API_URL, post_gemini
 
 
 def send_to_gemini(filename: str, code: str) -> Tuple[dict | None, str | None]:
@@ -33,7 +26,6 @@ def send_to_gemini(filename: str, code: str) -> Tuple[dict | None, str | None]:
       "description": "Tóm tắt file"
     }
     """
-    headers = {"Content-Type": "application/json"}
 
     prompt = f"""
 You are analyzing a source code file named "{filename}".
@@ -84,66 +76,40 @@ Here is the file content:
 
     payload = {"contents": [{"role": "user", "parts": [{"text": prompt}]}]}
 
-    max_retries = 5
-    attempt = 0
+    response, api_error = post_gemini(payload, label=filename)
+    if api_error or response is None:
+        return None, api_error
 
-    while attempt < max_retries:
-        response = requests.post(GEMINI_API_URL, headers=headers, json=payload)
+    try:
+        data = response.json()
+        text = data["candidates"][0]["content"]["parts"][0]["text"].strip()
 
-        if response.status_code == 200:
-            try:
-                data = response.json()
-                text = data["candidates"][0]["content"]["parts"][0]["text"].strip()
+        # 1) Thử parse JSON trực tiếp
+        try:
+            result = json.loads(text)
+        except json.JSONDecodeError:
+            # 2) Nếu fail, bóc JSON: lấy từ '{' đầu tiên tới '}' cuối cùng
+            start = text.find("{")
+            end = text.rfind("}")
+            if start == -1 or end == -1 or end <= start:
+                raise ValueError("No JSON object found in AI response.")
 
-                # 1) Thử parse JSON trực tiếp
-                try:
-                    result = json.loads(text)
-                except json.JSONDecodeError:
-                    # 2) Nếu fail, bóc JSON: lấy từ '{' đầu tiên tới '}' cuối cùng
-                    start = text.find("{")
-                    end = text.rfind("}")
-                    if start == -1 or end == -1 or end <= start:
-                        raise ValueError("No JSON object found in AI response.")
+            json_str = text[start: end + 1]
+            result = json.loads(json_str)
 
-                    json_str = text[start: end + 1]
-                    result = json.loads(json_str)
+        if "dot_code" not in result:
+            return None, "AI response missing 'dot_code'."
 
-                if "dot_code" not in result:
-                    return None, "AI response missing 'dot_code'."
+        # Đảm bảo các key khác tồn tại
+        result.setdefault("classes", [])
+        result.setdefault("functions", [])
+        result.setdefault("imports", [])
+        result.setdefault("description", "")
 
-                # Đảm bảo các key khác tồn tại
-                result.setdefault("classes", [])
-                result.setdefault("functions", [])
-                result.setdefault("imports", [])
-                result.setdefault("description", "")
+        return result, None
 
-                return result, None
-
-            except Exception as e:
-                return None, f"Error parsing AI JSON response: {e}"
-
-        elif response.status_code == 429:
-            # Rate limit
-            try:
-                data = response.json()
-                details = data["error"].get("details", [])
-                retry_after = 40
-                for d in details:
-                    if "@type" in d and "RetryInfo" in d["@type"]:
-                        delay_str = d.get("retryDelay", "40s")
-                        retry_after = int(re.search(r"\d+", delay_str).group(0))
-                print(f"[Rate limit] Waiting {retry_after}s before retrying {filename}...")
-                time.sleep(retry_after)
-            except Exception:
-                print("[Rate limit] Waiting 40s (default)...")
-                time.sleep(40)
-            attempt += 1
-            continue
-
-        else:
-            return None, f"Error {response.status_code}: {response.text}"
-
-    return None, "Max retries reached after repeated 429 errors."
+    except Exception as e:
+        return None, f"Error parsing AI JSON response: {e}"
 
 
 def merge_dot_graphs(dot_list: Iterable[str]) -> str:
@@ -204,7 +170,6 @@ def review_repo_with_gemini(filename_to_code: Dict[str, str]) -> Tuple[dict | No
 
     joined_code = "\n\n".join(sampled_files)
 
-    headers = {"Content-Type": "application/json"}
 
     prompt = f"""
 You are a senior code reviewer.
@@ -249,11 +214,11 @@ Here are the files (partial contents):
 
     payload = {"contents": [{"role": "user", "parts": [{"text": prompt}]}]}
 
-    try:
-        response = requests.post(GEMINI_API_URL, headers=headers, json=payload)
-        if response.status_code != 200:
-            return None, f"Review API error {response.status_code}: {response.text}"
+    response, api_error = post_gemini(payload, label="repo review")
+    if api_error or response is None:
+        return None, api_error
 
+    try:
         data = response.json()
         text = data["candidates"][0]["content"]["parts"][0]["text"].strip()
 

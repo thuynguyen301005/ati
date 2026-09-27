@@ -2,14 +2,7 @@ import json
 import re
 from typing import Any, Dict, Tuple
 
-import requests
-
-from config import GOOGLE_GEMINI_API_KEY
-
-GEMINI_API_URL = (
-    "https://generativelanguage.googleapis.com/v1beta/models/"
-    f"gemini-2.0-flash:generateContent?key={GOOGLE_GEMINI_API_KEY}"
-)
+from services.gemini_client import post_gemini
 
 STAGES = [
     ("stories", "User stories", "user stories, acceptance criteria, and assumptions"),
@@ -89,15 +82,13 @@ Rules:
 - For stories, content must include stories (array) and assumptions (array).
 - For tasks, content must include tasks (array), where each task has id, title, description, and depends_on.
 """
+    response, error = post_gemini(
+        {"contents": [{"role": "user", "parts": [{"text": prompt}]}]},
+        label=stage_name,
+    )
+    if error or response is None:
+        return None, error
     try:
-        response = requests.post(
-            GEMINI_API_URL,
-            headers={"Content-Type": "application/json"},
-            json={"contents": [{"role": "user", "parts": [{"text": prompt}]}]},
-            timeout=120,
-        )
-        if response.status_code != 200:
-            return None, f"Gemini API error {response.status_code}: {response.text}"
         text = response.json()["candidates"][0]["content"]["parts"][0]["text"]
         return _parse_json(text), None
     except Exception as exc:

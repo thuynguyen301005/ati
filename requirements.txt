@@ -2,4 +2,5 @@ flask
 graphviz
 requests
 GitPython
+python-dotenv
 pytest

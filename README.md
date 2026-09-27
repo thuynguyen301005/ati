@@ -59,7 +59,23 @@ CodeStructureViz (AI-Structura) is a tool that supports learning and working wit
    pip install -r requirements.txt
    ```
 
-6. Run the Flask application:
+6. Set the Gemini API key:
+
+   ```bash
+   cp .env.example .env
+   ```
+
+   Open `.env` and replace the placeholder with a real key from
+   https://aistudio.google.com/apikey :
+
+   ```
+   GOOGLE_GEMINI_API_KEY=AIza...
+   ```
+
+   The app loads this file automatically at startup. Without a valid key every
+   Gemini call returns `400 API_KEY_INVALID`.
+
+7. Run the Flask application:
    ```bash
    flask run
    ```
