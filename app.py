@@ -54,6 +54,21 @@ def generate_specification():
     dot_code = architecture.get("dot_code")
     if dot_code:
         project["architecture_svg"], project["architecture_error"] = render_svg_from_dot(dot_code)
+
+    # Use case + activity diagram: render san SVG de frontend chi viec nhung vao.
+    diagrams = project["artifacts"].get("diagrams", {}).get("content", {}) or {}
+    project["diagram_svgs"] = {}
+    project["diagram_errors"] = {}
+    for name in ("use_case", "activity"):
+        block = diagrams.get(name) or {}
+        dot = block.get("dot_code") if isinstance(block, dict) else None
+        if not dot:
+            continue
+        svg, error = render_svg_from_dot(dot)
+        if svg:
+            project["diagram_svgs"][name] = svg
+        if error:
+            project["diagram_errors"][name] = error
     SPEC_PROJECTS[project_id] = project
     return jsonify({"project_id": project_id, "project": project})
 
@@ -86,6 +101,8 @@ def export_specification(project_id):
         bundle.writestr("validation.json", json.dumps(project.get("validation", {}), indent=2))
         if project.get("architecture_svg"):
             bundle.writestr("docs/architecture.svg", project["architecture_svg"])
+        for name, svg in (project.get("diagram_svgs") or {}).items():
+            bundle.writestr(f"docs/{name.replace('_', '-')}-diagram.svg", svg)
         for stage in ("code", "tests", "docs"):
             files = project["artifacts"].get(stage, {}).get("content", {}).get("files", [])
             for file in files:

@@ -1,11 +1,12 @@
 import json
-import re
 from typing import Any, Dict, Tuple
 
 from services.gemini_client import post_gemini
+from services.json_utils import parse_json_loose
 
 STAGES = [
     ("stories", "User stories", "user stories, acceptance criteria, and assumptions"),
+    ("diagrams", "UML diagrams", "a UML use case diagram and an activity diagram, both as Graphviz DOT"),
     ("architecture", "Architecture", "a pragmatic system architecture and Graphviz DOT diagram"),
     ("tasks", "Implementation tasks", "an ordered implementation backlog with dependencies"),
     ("code", "Source code", "a small but coherent runnable MVP source tree"),
@@ -32,24 +33,17 @@ def validate_artifacts(artifacts: Dict[str, Any]) -> Dict[str, Any]:
         "name": "generated paths are unique",
         "passed": len(code_paths) == len(code_files) and len(test_paths) == len(test_files),
     })
+    diagrams = (artifacts.get("diagrams", {}).get("content", {}) or {})
+    for name in ("use_case", "activity"):
+        block = diagrams.get(name) or {}
+        dot_code = block.get("dot_code") if isinstance(block, dict) else None
+        checks.append({
+            "name": f"{name} diagram has DOT source",
+            "passed": bool(dot_code and "digraph" in str(dot_code)),
+        })
+
     passed = sum(check["passed"] for check in checks)
     return {"passed": passed == len(checks), "score": f"{passed}/{len(checks)}", "checks": checks}
-
-
-def _parse_json(text: str) -> Dict[str, Any]:
-    cleaned = text.strip()
-    cleaned = re.sub(r"^```(?:json)?\s*|\s*```$", "", cleaned, flags=re.IGNORECASE)
-    try:
-        value = json.loads(cleaned)
-    except json.JSONDecodeError:
-        start = cleaned.find("{")
-        end = cleaned.rfind("}")
-        if start == -1 or end <= start:
-            raise ValueError("AI response did not contain a JSON object")
-        value = json.loads(cleaned[start : end + 1])
-    if not isinstance(value, dict):
-        raise ValueError("AI response must be a JSON object")
-    return value
 
 
 def _ask_agent(requirement: str, context: str, stage_name: str, deliverable: str) -> Tuple[Dict[str, Any] | None, str | None]:
@@ -80,17 +74,41 @@ Rules:
 - For tests and docs, use the same content.files format.
 - For architecture, content must include components (array), decisions (array), and dot_code (a valid digraph string).
 - For stories, content must include stories (array) and assumptions (array).
+- For diagrams, content must include use_case and activity objects:
+  "use_case": {{
+    "actors": [{{"name": "...", "description": "..."}}],
+    "use_cases": [{{"id": "UC1", "name": "...", "actors": ["..."], "description": "..."}}],
+    "dot_code": "digraph UseCase {{ rankdir=LR; ... }}"
+  }},
+  "activity": {{
+    "scenario": "name of the main flow being modelled",
+    "steps": [{{"id": "A1", "name": "...", "type": "start|action|decision|end", "next": ["A2"]}}],
+    "dot_code": "digraph Activity {{ rankdir=TB; ... }}"
+  }}
+- Use case DOT style: actors as node [shape=box, style=rounded] outside a
+  "subgraph cluster_system" that holds the use cases as node [shape=ellipse];
+  associations are plain edges actor -> use case (edge [arrowhead=none]);
+  use "style=dashed, label=\"<<include>>\"" for include/extend edges.
+- Activity DOT style: start and end as node [shape=circle, label=""] (end uses
+  peripheries=2), actions as node [shape=box, style=rounded], decisions as
+  node [shape=diamond] with labelled outgoing edges (yes/no).
+- Every dot_code must be one self-contained digraph that renders in Graphviz:
+  quote every label, never leave an edge pointing at an undeclared node.
 - For tasks, content must include tasks (array), where each task has id, title, description, and depends_on.
 """
     response, error = post_gemini(
-        {"contents": [{"role": "user", "parts": [{"text": prompt}]}]},
+        {
+            "contents": [{"role": "user", "parts": [{"text": prompt}]}],
+            # Ep model tra ve JSON thuan, khong kem fence hay loi dan.
+            "generationConfig": {"responseMimeType": "application/json"},
+        },
         label=stage_name,
     )
     if error or response is None:
         return None, error
     try:
         text = response.json()["candidates"][0]["content"]["parts"][0]["text"]
-        return _parse_json(text), None
+        return parse_json_loose(text), None
     except Exception as exc:
         return None, str(exc)
 

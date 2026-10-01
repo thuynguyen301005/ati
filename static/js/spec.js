@@ -32,6 +32,22 @@ function text(value) {
   return value == null ? "" : String(value);
 }
 
+function renderUmlDiagram(heading, svg, error, block) {
+  const details = block || {};
+  artifactContent.insertAdjacentHTML("beforeend", `<h4 class="diagram-heading">${text(heading)}</h4>`);
+  if (svg) {
+    artifactContent.insertAdjacentHTML("beforeend", `<div class="architecture-preview">${svg}</div>`);
+  } else {
+    artifactContent.insertAdjacentHTML("beforeend", `<div class="artifact-note">Diagram could not be rendered. ${text(error || "No DOT source returned.")}</div>`);
+  }
+
+  (details.actors || []).forEach((actor) => artifactContent.insertAdjacentHTML("beforeend", `<div class="artifact-card"><b>Actor: ${text(actor.name)}</b><p>${text(actor.description)}</p></div>`));
+  (details.use_cases || []).forEach((useCase) => artifactContent.insertAdjacentHTML("beforeend", `<div class="artifact-card"><b>${text(useCase.id)}: ${text(useCase.name)}</b><p>${text(useCase.description)}</p><small>Actors: ${text((useCase.actors || []).join(", ") || "-")}</small></div>`));
+  if (details.scenario) artifactContent.insertAdjacentHTML("beforeend", `<div class="artifact-note"><strong>Scenario</strong><p>${text(details.scenario)}</p></div>`);
+  (details.steps || []).forEach((step) => artifactContent.insertAdjacentHTML("beforeend", `<div class="artifact-card task-card"><span>${text(step.id)}</span><div><b>${text(step.name)}</b><small>${text(step.type)} &rarr; ${text((step.next || []).join(", ") || "end")}</small></div></div>`));
+  if (details.dot_code) artifactContent.insertAdjacentHTML("beforeend", `<details class="code-details"><summary>${text(heading)} DOT source</summary><pre>${text(details.dot_code)}</pre></details>`);
+}
+
 function renderArtifact(key) {
   const artifact = project.artifacts[key];
   activeKey = key;
@@ -44,6 +60,9 @@ function renderArtifact(key) {
       artifactContent.insertAdjacentHTML("beforeend", `<div class="artifact-card"><b>${text(story.id || "Story")}: ${text(story.title)}</b><p>${text(story.as_a || story.description)}</p><p><strong>Acceptance:</strong> ${text((story.acceptance_criteria || []).join(" | "))}</p></div>`);
     });
     if (content.assumptions?.length) artifactContent.insertAdjacentHTML("beforeend", `<div class="artifact-note"><strong>Assumptions</strong><p>${text(content.assumptions.join(" | "))}</p></div>`);
+  } else if (key === "diagrams") {
+    renderUmlDiagram("Use case diagram", project.diagram_svgs?.use_case, project.diagram_errors?.use_case, content.use_case);
+    renderUmlDiagram("Activity diagram", project.diagram_svgs?.activity, project.diagram_errors?.activity, content.activity);
   } else if (key === "architecture") {
     if (project.architecture_svg) artifactContent.insertAdjacentHTML("beforeend", `<div class="architecture-preview">${project.architecture_svg}</div>`);
     (content.components || []).forEach((component) => artifactContent.insertAdjacentHTML("beforeend", `<div class="artifact-card"><b>${text(component.name)}</b><p>${text(component.responsibility || component.description)}</p><small>${text(component.technology || "")}</small></div>`));

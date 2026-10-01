@@ -377,6 +377,7 @@ body::before {
 .code-details summary { padding: 12px 15px; color: #d6ddcf; cursor: pointer; font: .78rem Arial, sans-serif; }
 .code-details summary small { float: right; color: #788279; }
 .code-details pre { overflow: auto; margin: 0; padding: 15px; color: #c5de5d; border-top: 1px solid #343c35; font: .73rem/1.55 Consolas, monospace; white-space: pre-wrap; }
+.diagram-heading { margin: 22px 0 0; color: #d6ddcf; font: .9rem Arial, sans-serif; letter-spacing: .04em; text-transform: uppercase; }
 .architecture-preview { overflow: auto; margin: 12px 0; padding: 16px; background: #f1f3ed; border: 1px solid #c5de5d; }
 .architecture-preview svg { display: block; width: 100%; min-width: 500px; height: auto; max-height: 520px; }
 .hidden { display: none; }

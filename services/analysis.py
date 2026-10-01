@@ -1,11 +1,11 @@
 import re
-import json
 from typing import Dict, Tuple, Iterable
 
 import graphviz
 
 # GEMINI_API_URL được re-export để app.py tiếp tục import từ đây.
 from services.gemini_client import GEMINI_API_URL, post_gemini
+from services.json_utils import parse_json_loose
 
 
 def send_to_gemini(filename: str, code: str) -> Tuple[dict | None, str | None]:
@@ -84,18 +84,7 @@ Here is the file content:
         data = response.json()
         text = data["candidates"][0]["content"]["parts"][0]["text"].strip()
 
-        # 1) Thử parse JSON trực tiếp
-        try:
-            result = json.loads(text)
-        except json.JSONDecodeError:
-            # 2) Nếu fail, bóc JSON: lấy từ '{' đầu tiên tới '}' cuối cùng
-            start = text.find("{")
-            end = text.rfind("}")
-            if start == -1 or end == -1 or end <= start:
-                raise ValueError("No JSON object found in AI response.")
-
-            json_str = text[start: end + 1]
-            result = json.loads(json_str)
+        result = parse_json_loose(text)
 
         if "dot_code" not in result:
             return None, "AI response missing 'dot_code'."
@@ -222,16 +211,7 @@ Here are the files (partial contents):
         data = response.json()
         text = data["candidates"][0]["content"]["parts"][0]["text"].strip()
 
-        try:
-            review = json.loads(text)
-        except json.JSONDecodeError:
-            start = text.find("{")
-            end = text.rfind("}")
-            if start == -1 or end == -1 or end <= start:
-                raise ValueError("No JSON object found in review response.")
-
-            json_str = text[start: end + 1]
-            review = json.loads(json_str)
+        review = parse_json_loose(text)
 
         review.setdefault("summary", "")
         review.setdefault("issues", [])
