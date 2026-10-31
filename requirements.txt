@@ -4,3 +4,5 @@ requests
 GitPython
 python-dotenv
 pytest
+pypdf
+python-docx

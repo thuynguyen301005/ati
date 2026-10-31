@@ -1,4 +1,5 @@
-from flask import Flask, render_template, request, jsonify, send_file
+from flask import Flask, render_template, request, jsonify, send_file, session, redirect, url_for
+from functools import wraps
 import io
 import json
 import os
@@ -7,7 +8,8 @@ import subprocess
 import tempfile
 import zipfile
 import uuid
-from typing import Dict, List
+from datetime import datetime, timezone
+from typing import Any, Dict, List
 import requests
 
 from services.analysis import (
@@ -19,46 +21,146 @@ from services.analysis import (
 )
 from services.gemini_client import post_gemini
 from services.git_repo import clone_git_repo_and_load_files
-from services.spec_agent import generate_software_plan
+from services.spec_agent import STAGES, STAGE_KEYS, generate_software_plan, revise_project, validate_artifacts
+from services.document_reader import extract_text
+from services import db
+from werkzeug.security import check_password_hash, generate_password_hash
+from config import SECRET_KEY
 
 app = Flask(__name__)
+app.secret_key = SECRET_KEY
+app.config["SESSION_COOKIE_HTTPONLY"] = True
+app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
+db.init_db()
+# Giới hạn file upload đặc tả.
+app.config["MAX_CONTENT_LENGTH"] = 10 * 1024 * 1024
+MAX_REQUIREMENT_CHARS = 30000
 
 # Lưu nhiều repo: repo_id -> analysis result
 REPOS: Dict[str, Dict] = {}
-SPEC_PROJECTS: Dict[str, Dict] = {}
+
+
+# ========= ĐĂNG NHẬP =========
+
+def current_user_id() -> int | None:
+    return session.get("user_id")
+
+
+def login_required(view):
+    """Trang thì chuyển về /login, API thì trả 401."""
+    @wraps(view)
+    def wrapper(*args, **kwargs):
+        if not current_user_id():
+            if request.path.startswith("/api/"):
+                return jsonify({"error": "Please sign in again."}), 401
+            return redirect(url_for("login", next=request.path))
+        return view(*args, **kwargs)
+    return wrapper
+
+
+def _safe_next(target: str | None) -> str:
+    # Chỉ cho redirect nội bộ, tránh open redirect.
+    if target and target.startswith("/") and not target.startswith("//"):
+        return target
+    return url_for("home")
+
+
+@app.route("/login", methods=["GET", "POST"])
+def login():
+    if current_user_id():
+        return redirect(url_for("home"))
+    error = None
+    email = ""
+    if request.method == "POST":
+        email = (request.form.get("email") or "").strip().lower()
+        password = request.form.get("password") or ""
+        user = db.get_user_by_email(email)
+        if user and check_password_hash(user["password_hash"], password):
+            session.clear()
+            session["user_id"] = user["id"]
+            session.permanent = True
+            return redirect(_safe_next(request.args.get("next")))
+        error = "Incorrect email or password."
+    return render_template("auth.html", mode="login", error=error, email=email)
+
+
+@app.route("/register", methods=["GET", "POST"])
+def register():
+    if current_user_id():
+        return redirect(url_for("home"))
+    error = None
+    email = ""
+    name = ""
+    if request.method == "POST":
+        name = (request.form.get("name") or "").strip()
+        email = (request.form.get("email") or "").strip().lower()
+        password = request.form.get("password") or ""
+        confirm = request.form.get("confirm") or ""
+        if not name or len(name) > 80:
+            error = "Enter your name (up to 80 characters)."
+        elif "@" not in email or len(email) > 254:
+            error = "Enter a valid email address."
+        elif len(password) < 6:
+            error = "Password must be at least 6 characters."
+        elif password != confirm:
+            error = "Passwords do not match."
+        else:
+            user_id = db.create_user(email, generate_password_hash(password), name)
+            if user_id is None:
+                error = "An account with this email already exists."
+            else:
+                session.clear()
+                session["user_id"] = user_id
+                session.permanent = True
+                return redirect(url_for("home"))
+    return render_template("auth.html", mode="register", error=error, email=email, name=name)
+
+
+@app.route("/logout", methods=["POST"])
+def logout():
+    session.clear()
+    return redirect(url_for("login"))
 
 
 # ========= ROUTES CƠ BẢN =========
 
+def _spec_page(project_id: str = ""):
+    user = db.get_user(current_user_id())
+    if not user:
+        session.clear()
+        return redirect(url_for("login"))
+    if project_id and not db.get_project(user["id"], project_id):
+        return redirect(url_for("home"))
+    user["display_name"] = user.get("name") or user["email"].split("@")[0]
+    return render_template("spec.html", user=user, project_id=project_id)
+
+
 @app.route("/")
+@login_required
 def home():
-    return render_template("spec.html")
+    return _spec_page()
 
 
-@app.route("/api/spec/generate", methods=["POST"])
-def generate_specification():
-    data = request.get_json() or {}
-    requirement = (data.get("requirement") or "").strip()
-    if len(requirement) < 20:
-        return jsonify({"error": "Requirement must contain at least 20 characters."}), 400
-    if len(requirement) > 12000:
-        return jsonify({"error": "Requirement is too large. Keep it under 12,000 characters."}), 400
+@app.route("/spec/<project_id>")
+@login_required
+def open_specification(project_id):
+    return _spec_page(project_id)
 
-    project, error = generate_software_plan(requirement)
-    if error or not project:
-        return jsonify({"error": error or "Unable to generate the software plan."}), 502
 
-    project_id = str(uuid.uuid4())
-    project["id"] = project_id
-    architecture = project["artifacts"].get("architecture", {}).get("content", {})
-    dot_code = architecture.get("dot_code")
-    if dot_code:
-        project["architecture_svg"], project["architecture_error"] = render_svg_from_dot(dot_code)
+def _render_project_diagrams(project: Dict[str, Any]) -> None:
+    """Render lại SVG cho architecture + use case + activity từ DOT hiện có."""
+    architecture = project["artifacts"].get("architecture", {}).get("content", {}) or {}
+    dot_code = architecture.get("dot_code") if isinstance(architecture, dict) else None
+    project["architecture_svg"], project["architecture_error"] = (
+        render_svg_from_dot(dot_code) if dot_code else (None, None)
+    )
 
     # Use case + activity diagram: render san SVG de frontend chi viec nhung vao.
     diagrams = project["artifacts"].get("diagrams", {}).get("content", {}) or {}
     project["diagram_svgs"] = {}
     project["diagram_errors"] = {}
+    if not isinstance(diagrams, dict):
+        return
     for name in ("use_case", "activity"):
         block = diagrams.get(name) or {}
         dot = block.get("dot_code") if isinstance(block, dict) else None
@@ -69,15 +171,189 @@ def generate_specification():
             project["diagram_svgs"][name] = svg
         if error:
             project["diagram_errors"][name] = error
-    SPEC_PROJECTS[project_id] = project
+
+
+def _project_title(project: Dict[str, Any]) -> str:
+    first = next(iter(project["artifacts"].values()), {})
+    title = (first.get("title") if isinstance(first, dict) else None) or project["requirement"][:60]
+    return str(title).strip()[:120] or "Untitled project"
+
+
+STAGE_NAMES = {key: name for key, name, _ in STAGES}
+MAX_CHAT_MESSAGE_CHARS = 4000
+
+
+def _chat_message(role: str, content: str, updated: List[str] | None = None) -> Dict[str, Any]:
+    message = {"role": role, "content": content, "created_at": datetime.now(timezone.utc).isoformat(timespec="seconds")}
+    if updated:
+        message["updated"] = updated
+    return message
+
+
+def _load_project_or_404(project_id: str):
+    project = db.get_project(current_user_id(), project_id)
+    if not project:
+        return None, (jsonify({"error": "specification project not found"}), 404)
+    return project, None
+
+
+@app.route("/api/spec/generate", methods=["POST"])
+@login_required
+def generate_specification():
+    data = request.get_json() or {}
+    requirement = (data.get("requirement") or "").strip()
+    if len(requirement) < 20:
+        return jsonify({"error": "Requirement must contain at least 20 characters."}), 400
+    if len(requirement) > MAX_REQUIREMENT_CHARS:
+        return jsonify({"error": f"Requirement is too large. Keep it under {MAX_REQUIREMENT_CHARS:,} characters."}), 400
+
+    stages = data.get("stages")
+    if stages is not None:
+        if not isinstance(stages, list) or not stages:
+            return jsonify({"error": "Select at least one pipeline stage."}), 400
+        unknown = [stage for stage in stages if stage not in STAGE_KEYS]
+        if unknown:
+            return jsonify({"error": f"Unknown stages: {', '.join(map(str, unknown))}"}), 400
+
+    project, error = generate_software_plan(requirement, stages)
+    if error or not project:
+        return jsonify({"error": error or "Unable to generate the software plan."}), 502
+
+    project_id = str(uuid.uuid4())
+    project["id"] = project_id
+    project["title"] = _project_title(project)
+    _render_project_diagrams(project)
+    generated = list(project["artifacts"])
+    project["messages"] = [
+        _chat_message("user", requirement),
+        _chat_message(
+            "assistant",
+            "Generated " + ", ".join(STAGE_NAMES[key] for key in generated)
+            + ". Tell me what to change and I will update the documents.",
+            generated,
+        ),
+    ]
+    db.save_project(current_user_id(), project)
     return jsonify({"project_id": project_id, "project": project})
 
 
+@app.route("/api/spec/upload", methods=["POST"])
+@login_required
+def upload_specification():
+    """Đọc file đặc tả và trả về text để điền vào ô requirement."""
+    file = request.files.get("file")
+    if not file or not file.filename:
+        return jsonify({"error": "No file uploaded."}), 400
+
+    text, error = extract_text(file.filename, file.read())
+    if error:
+        return jsonify({"error": error}), 400
+    return jsonify({"filename": file.filename, "text": text, "chars": len(text)})
+
+
+@app.errorhandler(413)
+def file_too_large(_error):
+    return jsonify({"error": "File is too large (max 10 MB)."}), 413
+
+
+@app.route("/api/spec/projects", methods=["GET"])
+@login_required
+def list_specifications():
+    return jsonify({"projects": db.list_projects(current_user_id())})
+
+
 @app.route("/api/spec/<project_id>", methods=["GET"])
+@login_required
 def get_specification(project_id):
-    project = SPEC_PROJECTS.get(project_id)
-    if not project:
+    project, error = _load_project_or_404(project_id)
+    if error:
+        return error
+    return jsonify({"project": project})
+
+
+@app.route("/api/spec/<project_id>", methods=["PATCH"])
+@login_required
+def rename_specification(project_id):
+    project, error = _load_project_or_404(project_id)
+    if error:
+        return error
+    title = ((request.get_json() or {}).get("title") or "").strip()
+    if not title:
+        return jsonify({"error": "Title cannot be empty."}), 400
+    project["title"] = title[:120]
+    db.save_project(current_user_id(), project)
+    return jsonify({"project": project})
+
+
+@app.route("/api/spec/<project_id>", methods=["DELETE"])
+@login_required
+def delete_specification(project_id):
+    if not db.delete_project(current_user_id(), project_id):
         return jsonify({"error": "specification project not found"}), 404
+    return jsonify({"deleted": project_id})
+
+
+@app.route("/api/spec/<project_id>/chat", methods=["POST"])
+@login_required
+def chat_specification(project_id):
+    """Chat tiếp trên project: AI trả lời và sửa các artifact liên quan."""
+    project, error = _load_project_or_404(project_id)
+    if error:
+        return error
+    message = ((request.get_json() or {}).get("message") or "").strip()
+    if not message:
+        return jsonify({"error": "Message cannot be empty."}), 400
+    if len(message) > MAX_CHAT_MESSAGE_CHARS:
+        return jsonify({"error": f"Message is too long (max {MAX_CHAT_MESSAGE_CHARS:,} characters)."}), 400
+
+    result, agent_error = revise_project(project, message)
+    if agent_error or not result:
+        return jsonify({"error": agent_error or "The agent could not answer."}), 502
+
+    updates = result["updates"]
+    for key, artifact in updates.items():
+        project["artifacts"][key] = {
+            "title": str(artifact.get("title") or STAGE_NAMES[key]),
+            "summary": str(artifact.get("summary") or ""),
+            "content": artifact["content"],
+        }
+    # Giữ thứ tự pipeline cho tab và danh sách stage.
+    project["artifacts"] = {key: project["artifacts"][key] for key in STAGE_KEYS if key in project["artifacts"]}
+    project["stages"] = list(project["artifacts"])
+    if "architecture" in updates or "diagrams" in updates:
+        _render_project_diagrams(project)
+    project["validation"] = validate_artifacts(project["artifacts"], project["stages"])
+
+    messages = project.setdefault("messages", [])
+    messages.append(_chat_message("user", message))
+    messages.append(_chat_message("assistant", result["reply"], list(updates)))
+    db.save_project(current_user_id(), project)
+    return jsonify({"project": project, "reply": result["reply"], "updated": list(updates)})
+
+
+@app.route("/api/spec/<project_id>/artifacts/<key>", methods=["PUT"])
+@login_required
+def update_artifact(project_id, key):
+    """Lưu bản sửa của một artifact, rồi render lại sơ đồ nếu DOT thay đổi."""
+    project, error = _load_project_or_404(project_id)
+    if error:
+        return error
+    if key not in project["artifacts"]:
+        return jsonify({"error": f"Artifact '{key}' not found."}), 404
+
+    artifact = request.get_json() or {}
+    if not isinstance(artifact.get("content"), dict):
+        return jsonify({"error": "Artifact content must be a JSON object."}), 400
+    project["artifacts"][key] = {
+        "title": str(artifact.get("title") or "").strip() or key,
+        "summary": str(artifact.get("summary") or ""),
+        "content": artifact["content"],
+    }
+    if key in ("architecture", "diagrams"):
+        _render_project_diagrams(project)
+    stages = project.get("stages") or list(project["artifacts"])
+    project["validation"] = validate_artifacts(project["artifacts"], stages)
+    db.save_project(current_user_id(), project)
     return jsonify({"project": project})
 
 
@@ -90,10 +366,11 @@ def _safe_generated_path(path: str) -> Path | None:
 
 
 @app.route("/api/spec/<project_id>/export", methods=["GET"])
+@login_required
 def export_specification(project_id):
-    project = SPEC_PROJECTS.get(project_id)
-    if not project:
-        return jsonify({"error": "specification project not found"}), 404
+    project, error = _load_project_or_404(project_id)
+    if error:
+        return error
 
     archive = io.BytesIO()
     with zipfile.ZipFile(archive, "w", zipfile.ZIP_DEFLATED) as bundle:
@@ -116,10 +393,11 @@ def export_specification(project_id):
 
 
 @app.route("/api/spec/<project_id>/run-tests", methods=["POST"])
+@login_required
 def run_generated_tests(project_id):
-    project = SPEC_PROJECTS.get(project_id)
-    if not project:
-        return jsonify({"error": "specification project not found"}), 404
+    project, error = _load_project_or_404(project_id)
+    if error:
+        return error
 
     code_files = project["artifacts"].get("code", {}).get("content", {}).get("files", [])
     test_files = project["artifacts"].get("tests", {}).get("content", {}).get("files", [])

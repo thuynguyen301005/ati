@@ -22,6 +22,9 @@ GEMINI_API_URL = (
 # Các mã lỗi đáng thử lại: hết quota tạm thời, hoặc model đang quá tải.
 RETRYABLE_STATUS = {429, 500, 502, 503, 504}
 
+# RetryInfo dài hơn mức này nghĩa là hết quota ngày, không đáng chờ.
+MAX_RETRY_WAIT = 60
+
 _HEADERS = {"Content-Type": "application/json"}
 
 
@@ -30,7 +33,7 @@ def _retry_delay_from_body(response: requests.Response, fallback: float) -> floa
     try:
         for detail in response.json()["error"].get("details", []):
             if "RetryInfo" in detail.get("@type", ""):
-                found = re.search(r"\d+", detail.get("retryDelay", ""))
+                found = re.search(r"\d+(\.\d+)?", detail.get("retryDelay", ""))
                 if found:
                     return float(found.group(0))
     except Exception:
@@ -77,6 +80,12 @@ def post_gemini(
         # 429 thường kèm RetryInfo; 5xx thì lùi theo cấp số nhân.
         fallback = min(2 ** attempt, 30) + random.uniform(0, 1)
         wait = _retry_delay_from_body(response, fallback) if response.status_code == 429 else fallback
+        if wait > MAX_RETRY_WAIT:
+            # Google bao cho qua lau = het quota theo ngay; ngoi cho chi treo request.
+            return None, (
+                f"Gemini het quota (Google yeu cau cho {wait:.0f}s). "
+                f"Doi API key/bat billing hoac thu lai sau. Chi tiet: {response.text}"
+            )
         # Log khong dau: console Windows (cp1258) khong encode duoc tieng Viet co dau.
         print(
             f"[Gemini {response.status_code}] {label or 'request'}: "
