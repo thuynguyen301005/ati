@@ -42,14 +42,23 @@
 
       <section class="spec-workspace">
         <form id="specForm" class="spec-input-panel">
-          <div class="panel-heading"><div><span class="step-number">01</span><h2>Write the specification</h2></div><span id="charCount">0 / 30000</span></div>
+          <div class="panel-heading"><div><span class="step-number">01</span><h2>Write the specification</h2></div><span id="charCount" aria-live="polite" aria-atomic="true">0 / 30000</span></div>
+          <p class="spec-intro">Describe what you want to build. The agent turns your idea into a practical software plan, one stage at a time.</p>
           <label id="uploadZone" class="upload-zone" for="specFile">
             <input id="specFile" type="file" accept=".txt,.md,.pdf,.docx" hidden />
-            <b>Upload a specification file</b>
-            <small id="uploadStatus">Drop or click to choose .txt, .md, .pdf, or .docx (max 10 MB). The text is loaded below for you to review.</small>
+            <svg class="upload-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 16V4m0 0L7 9m5-5 5 5M5 14v5h14v-5"/></svg>
+            <span class="upload-copy">
+              <b>Upload a specification file</b>
+              <small id="uploadStatus">Drop a file here or click to browse · .txt, .md, .pdf, or .docx</small>
+            </span>
+            <span class="upload-meta">10 MB max</span>
           </label>
-          <label for="requirement">Product requirement</label>
-          <textarea id="requirement" minlength="20" maxlength="30000" required placeholder="Example: Build a campus event platform where students discover events, RSVP, receive reminders, and organizers manage attendance. Include roles, authentication, search, and a simple admin dashboard."></textarea>
+          <div class="requirement-heading">
+            <label for="requirement">Product requirement</label>
+            <span id="requirementHint">Include users, goals, and any must-have features.</span>
+          </div>
+          <textarea id="requirement" aria-describedby="requirementHint charCount" minlength="20" maxlength="30000" required placeholder="What are you building? Who is it for, and what should it help them do?"></textarea>
+          <p class="prompt-label">Need a starting point? Try an example</p>
           <div class="prompt-chips">
             <button type="button" data-prompt="Build a personal finance tracker with accounts, monthly budgets, transaction categories, spending charts, and CSV export.">Personal finance tracker</button>
             <button type="button" data-prompt="Build a campus event platform where students discover events, RSVP, receive reminders, and organizers manage attendance.">Campus events</button>
