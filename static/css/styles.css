@@ -473,3 +473,190 @@ html:has(.spec-page) { background: #101314; }
 .hidden { display: none; }
 @media (max-width: 900px) { .spec-layout { grid-template-columns: 1fr; } .spec-sidebar { position: static; height: auto; border-width: 0 0 1px 0; } .stage-count { margin-top: 0; } .history-list { max-height: 260px; } }
 @media (max-width: 760px) { .spec-nav { padding: 20px 18px; } .spec-title { white-space: normal; } .spec-workspace { grid-template-columns: 1fr; padding: 0 18px 25px; } .results-panel { margin: 0 18px 50px; padding: 20px; } .chat-panel { margin: 0 18px 20px; } .chat-composer { padding: 12px 18px 14px; } .chat-msg { max-width: 92%; } .spec-input-panel, .pipeline-panel { padding: 20px; } .nav-status { display: none; } }
+
+/* Consistent contrast and keyboard focus across every application screen. */
+input::placeholder, textarea::placeholder {
+  color: #9ca9b8;
+  opacity: 1;
+}
+
+:where(button, a, input, textarea, select):focus-visible {
+  outline: 2px solid #38bdf8;
+  outline-offset: 3px;
+}
+
+.spec-page :where(button, a, input, textarea, select):focus-visible {
+  outline-color: #c5de5d;
+}
+
+.text-slate-400 { color: #cbd5e1 !important; }
+.text-slate-500 { color: #a8b4c3 !important; }
+
+.auth-shell {
+  max-width: 460px;
+  padding-top: clamp(36px, 8vh, 76px);
+}
+
+.auth-shell .brand {
+  margin-bottom: 20px;
+}
+
+.auth-panel {
+  border-color: transparent;
+  background: rgba(24, 29, 27, .96);
+  box-shadow: 0 24px 70px rgba(0, 0, 0, .48);
+}
+
+.auth-panel .spec-title {
+  font-family: Arial, sans-serif;
+  font-weight: 700;
+  letter-spacing: -.035em;
+}
+
+.auth-lead {
+  color: #c2cbbf;
+  margin-bottom: 14px;
+}
+
+.auth-panel label {
+  display: block;
+  margin: 11px 0 7px;
+  color: #e1e7db;
+  font: 600 .8rem Arial, sans-serif;
+}
+
+.auth-panel input {
+  min-height: 46px;
+  border-radius: 8px;
+  border-color: #59645a;
+  transition: border-color .18s ease, box-shadow .18s ease;
+}
+
+.auth-panel input::placeholder {
+  color: #9ba69b;
+}
+
+.auth-panel input:focus {
+  border-color: #c5de5d;
+  box-shadow: 0 0 0 3px rgba(197, 222, 93, .18);
+}
+
+.auth-password-field {
+  position: relative;
+}
+
+.auth-password-field input {
+  padding-right: 50px;
+}
+
+.auth-password-field .password-toggle {
+  position: absolute;
+  top: 50%;
+  right: 9px;
+  display: grid;
+  width: 34px;
+  height: 34px;
+  place-items: center;
+  padding: 6px;
+  transform: translateY(-50%);
+  color: #c2cbbf;
+  background: transparent;
+  border: 0;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.auth-password-field .password-toggle:hover {
+  color: #c5de5d;
+  background: rgba(197, 222, 93, .09);
+}
+
+.password-toggle svg {
+  width: 19px;
+  height: 19px;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.7;
+}
+
+.primary-action {
+  position: relative;
+  display: flex;
+  justify-content: center;
+  border-radius: 8px;
+  transition: background-color .18s ease, box-shadow .18s ease, transform .18s ease;
+}
+
+.primary-action > strong {
+  position: absolute;
+  right: 17px;
+}
+
+.primary-action:hover:not(:disabled) {
+  background: #d7ed79;
+  box-shadow: 0 8px 24px rgba(197, 222, 93, .18);
+  transform: translateY(-1px);
+}
+
+.primary-action:active:not(:disabled) {
+  transform: translateY(0);
+}
+
+.primary-action:focus-visible {
+  outline-color: #c5de5d;
+  outline-offset: 4px;
+}
+
+.auth-switch {
+  color: #c2cbbf;
+}
+
+.auth-switch a {
+  color: #d7ed79;
+  text-underline-offset: 3px;
+}
+
+.auth-switch a:hover {
+  color: #efffb2;
+}
+
+.spec-main .spec-title {
+  font-family: Arial, sans-serif;
+  font-weight: 700;
+  letter-spacing: -.025em;
+}
+
+.spec-input-panel label,
+.artifact-editor label {
+  color: #e1e7db;
+}
+
+.spec-input-panel > input,
+.spec-input-panel > textarea,
+.editor-input,
+.editor-summary,
+.editor-code {
+  border-radius: 7px;
+}
+
+.spec-input-panel input:focus-visible,
+.spec-input-panel textarea:focus-visible,
+.editor-input:focus-visible,
+.editor-summary:focus-visible,
+.editor-code:focus-visible,
+#chatInput:focus-visible {
+  outline: 2px solid #c5de5d;
+  outline-offset: 2px;
+}
+
+@media (max-width: 520px) {
+  .auth-shell {
+    padding: 32px 16px;
+  }
+
+  .auth-panel {
+    padding: 22px;
+  }
+}
