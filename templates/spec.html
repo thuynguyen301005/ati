@@ -29,7 +29,7 @@
 
       <div class="sidebar-user">
         <span title="{{ user.email }}">{{ user.email }}</span>
-        <form method="post" action="{{ url_for('logout') }}"><button type="submit">Sign out</button></form>
+        <form method="post" action="{{ url_for('auth.logout') }}"><button type="submit">Sign out</button></form>
       </div>
     </aside>
 

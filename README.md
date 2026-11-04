@@ -80,6 +80,34 @@ CodeStructureViz (AI-Structura) is a tool that supports learning and working wit
    flask run
    ```
 
+## Project structure
+
+```text
+web/                 Flask app factory, Blueprints, and web state
+  auth.py             Login, registration, and page routes
+  specification_generation.py  Requirement validation and generation routes
+  specification_projects.py     Project management and chat routes
+  specification_artifacts.py    Artifact editing, export, and test routes
+  repository_pages.py Repository page route
+  repository_analysis_routes.py Local/Git analysis request routes
+  repository_api.py   Repository chat, structure, graph, and review APIs
+  state.py            In-memory repository analysis results
+services/             Database, external clients, and business logic
+  repository_analysis.py  Shared local/Git code analysis workflow
+  repository_chat.py      Repository-aware Gemini chat
+  specification_service.py Specification creation and project workflows
+  specification_artifact_service.py Export and generated-test workflows
+templates/            Jinja HTML templates
+static/               CSS, JavaScript, and images
+tests/                Automated tests
+app.py                Flask CLI and local development entry point
+config.py             Environment and application configuration
+```
+
+Routes are grouped by feature in Flask Blueprints. `app.py` remains the
+entry point, so `flask run` and `python app.py` continue to work. HTTP handling
+stays in `web/`; reusable project and repository workflows live in `services/`.
+
 ## Usage
 
 Open your web browser and navigate to `http://127.0.0.1:5000`.
